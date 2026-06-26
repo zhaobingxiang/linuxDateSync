@@ -873,6 +873,7 @@ class ServerConfigDialog(QDialog):
 
         self.username_edit = QLineEdit()
         self.username_edit.setStyleSheet(self.get_input_style())
+        self.username_edit.textChanged.connect(self._on_username_changed)
 
         self.password_edit = QLineEdit()
         self.password_edit.setEchoMode(QLineEdit.Password)
@@ -881,6 +882,13 @@ class ServerConfigDialog(QDialog):
         self.root_password_edit = QLineEdit()
         self.root_password_edit.setEchoMode(QLineEdit.Password)
         self.root_password_edit.setStyleSheet(self.get_input_style())
+
+        root_password_layout = QHBoxLayout()
+        root_password_layout.addWidget(self.root_password_edit)
+        self.root_password_hint = QLabel("（以root登录时无需填写）")
+        self.root_password_hint.setStyleSheet("QLabel { color: #6c757d; font-size: 11px; }")
+        self.root_password_hint.hide()
+        root_password_layout.addWidget(self.root_password_hint)
 
         self.remote_dir_edit = QLineEdit()
         self.remote_dir_edit.setStyleSheet(self.get_input_style())
@@ -1051,7 +1059,7 @@ class ServerConfigDialog(QDialog):
         form_layout.addRow("SSH端口:", self.port_spin)
         form_layout.addRow("用户名:", self.username_edit)
         form_layout.addRow("密码:", self.password_edit)
-        form_layout.addRow("Root密码:", self.root_password_edit)
+        form_layout.addRow("Root密码:", root_password_layout)
         form_layout.addRow("远程目录:", self.remote_dir_edit)
         form_layout.addRow("本地目录:", local_dir_layout)
         form_layout.addRow(self.enabled_check)
@@ -1099,6 +1107,11 @@ class ServerConfigDialog(QDialog):
             self.load_config()
 
         self.toggle_sync_settings(self.enabled_check.isChecked())
+
+    def _on_username_changed(self, text):
+        is_root = text.strip().lower() == 'root'
+        self.root_password_edit.setEnabled(not is_root)
+        self.root_password_hint.setVisible(is_root)
 
     def _add_time_to_list(self, list_widget, hour_spin, minute_spin):
         time_str = f"{hour_spin.value():02d}:{minute_spin.value():02d}"
@@ -1171,6 +1184,11 @@ class ServerConfigDialog(QDialog):
         self.root_password_edit.setText(getattr(self.config, 'root_password', ''))
         self.remote_dir_edit.setText(self.config.remote_dir)
         self.local_dir_edit.setText(self.config.local_dir)
+
+        # block signals 避免触发 toggle_sync_settings / change_sync_type 导致状态混乱
+        self.enabled_check.blockSignals(True)
+        self.sync_type_combo.blockSignals(True)
+
         self.enabled_check.setChecked(self.config.enabled)
 
         sync_type = getattr(self.config, 'sync_type', 'interval')
@@ -1195,6 +1213,15 @@ class ServerConfigDialog(QDialog):
             self.sync_type_combo.setCurrentIndex(3)
             daily_times = getattr(self.config, 'daily_times', ['00:00'])
             self._set_times_to_list(self.daily_time_list, daily_times)
+
+        # 恢复信号后手动初始化界面状态
+        self.enabled_check.blockSignals(False)
+        self.sync_type_combo.blockSignals(False)
+
+        # 手动调用初始化
+        self.toggle_sync_settings(self.enabled_check.isChecked())
+        self.change_sync_type(self.sync_type_combo.currentIndex())
+        self._on_username_changed(self.username_edit.text())
 
     def validate_and_accept(self):
         if not self.name_edit.text():
@@ -1382,10 +1409,11 @@ class ProgressDialog(QDialog):
             
             self.progress_updated.emit(0, "开始同步...")
             
-            def progress_callback(completed, total):
+            def progress_callback(completed, total, message=""):
                 if total > 0:
                     progress = int((completed / total) * 100)
-                    self.progress_updated.emit(progress, f"同步中: {completed}/{total}")
+                    status = message if message else f"同步中: {completed}/{total}"
+                    self.progress_updated.emit(progress, status)
             
             success, msg = ssh.sync_directory(
                 self.config.remote_dir,
