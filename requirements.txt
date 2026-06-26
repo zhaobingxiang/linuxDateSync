@@ -1,0 +1,4 @@
+PyQt5==5.15.10
+paramiko==3.4.0
+pywin32==306
+cryptography==42.0.8
