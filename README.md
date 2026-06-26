@@ -1,0 +1,2 @@
+# linuxDateSync
+这是一个Linux目录同步到windows电脑的工具，使用该工具，可以将Linux服务器上的文件备份到本地文件
